@@ -236,13 +236,11 @@
         }
         
         function drawPieces() {
-            // 모든 셀에서 기물 텍스트 제거
             document.querySelectorAll('.cell').forEach(cell => {
                 cell.textContent = '';
                 cell.classList.remove('pushed');
             });
             
-            // gamePieces 객체를 기반으로 기물 다시 그리기
             for (const id in gamePieces) {
                 const piece = gamePieces[id];
                 const cell = document.getElementById(id);
@@ -308,14 +306,12 @@
             switch (piece.type) {
                 case 'Striker':
                     const dir = piece.player === 'p1' ? 1 : -1;
-                    // 이동
                     [-1, 0, 1].forEach(dCol => {
                          [dir].forEach(dRow => {
                             const nextId = toId(col + dCol, row + dRow);
                             if (nextId && !gamePieces[nextId]) moves.push(nextId);
                         });
                     });
-                    // 공격
                      [-1, 0, 1].forEach(dCol => {
                          [-1, 0, 1].forEach(dRow => {
                             if (dCol === 0 && dRow === 0) return;
@@ -327,7 +323,6 @@
                     });
                     break;
                 case 'Cannon':
-                    // 이동
                     [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dCol, dRow]) => {
                         for (let i = 1; i <= 2; i++) {
                             const nextId = toId(col + dCol * i, row + dRow * i);
@@ -335,7 +330,6 @@
                             else break;
                         }
                     });
-                    // 공격
                      [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dCol, dRow]) => {
                         for (let i = 1; i <= 4; i++) {
                             const targetId = toId(col + dCol * i, row + dRow * i);
@@ -375,9 +369,8 @@
             // 액션 처리
             if (target) { // 공격
                 if (piece.type === 'Striker' && target.type === 'Striker') {
-                    // 스트라이커가 스트라이커를 공격
                     if (target.pushed) {
-                        delete gamePieces[toId]; // 이미 밀렸던 스트라이커는 사망
+                        delete gamePieces[toId];
                     } else {
                         const { col: fromCol, row: fromRow } = parseId(fromId);
                         const { col: toCol, row: toRow } = parseId(toId);
@@ -387,43 +380,49 @@
                              gamePieces[pushId] = target;
                              target.pushed = true;
                         } else {
-                            delete gamePieces[toId]; // 밀려날 곳이 없으면 사망
+                            delete gamePieces[toId];
                         }
                     }
                 } else {
-                     delete gamePieces[toId]; // 그 외 모든 공격은 즉시 사망
+                     delete gamePieces[toId];
                 }
+            
+            // ================= BUG FIX START =================
+            // 기존의 버그를 유발하던 코드를 삭제하고, 정상 작동하는 새 로직으로 교체합니다.
             } else if (piece.type === 'Breaker') {
                 const opponent = piece.player === 'p1' ? 'p2' : 'p1';
                 const opponentCore = opponent === 'p1' ? P1_CORE_LOCATIONS : P2_CORE_LOCATIONS;
+                const { col: toCol, row: toRow } = parseId(toId);
                 let isAdjacentToCore = false;
-                 for (let dCol = -1; dCol <= 1; dCol++) {
-                    for (let dRow = -1; dRow <= 1; dRow++) {
-                        if (opponentCore.includes(toId(parseId(toId).col + dCol, parseId(toId).row + dRow)))) {
-                            isAdjacentToCore = true;
-                            break;
-                        }
+
+                // 이동하려는 위치(toId)가 상대 코어에 인접한지 확인
+                for (const coreCellId of opponentCore) {
+                    const { col: coreCol, row: coreRow } = parseId(coreCellId);
+                    if (Math.abs(toCol - coreCol) <= 1 && Math.abs(toRow - coreRow) <= 1) {
+                        isAdjacentToCore = true;
+                        break;
                     }
-                 }
-                if (opponentCore.includes(toId)) { // 코어와 인접한 셀로 이동 시
+                }
+                
+                // 만약 인접하다면, 자폭하고 1의 데미지를 줍니다.
+                if (isAdjacentToCore) {
                     coreHealth[opponent]--;
-                    delete gamePieces[fromId]; // 자폭
-                    return;
+                    delete gamePieces[fromId]; // Breaker는 이동하지 않고 사라집니다.
+                    return; // 함수를 즉시 종료합니다.
                 }
             }
+            // ================= BUG FIX END ===================
             
             // 이동
             gamePieces[toId] = piece;
             delete gamePieces[fromId];
         }
 
-
         function handleCellClick(id) {
             if (isGameOver) return;
             const piece = gamePieces[id];
             
             if (selectedPiece) {
-                // 선택된 기물이 있고, 클릭한 곳이 이동 가능한 위치일 경우
                 const validMoves = getValidMoves(selectedPiece);
                 if (validMoves.includes(id)) {
                     movePiece(selectedPiece, id);
@@ -433,10 +432,8 @@
                     checkGameOver();
                     if (!isGameOver) switchTurn();
                 } else {
-                    // 이동 불가능한 위치나 다른 내 기물을 클릭한 경우
                     clearHighlights();
                     selectedPiece = null;
-                    // 만약 클릭한 곳이 내 다른 기물이라면, 그 기물을 새로 선택
                     if (piece && piece.player === currentPlayer) {
                         selectedPiece = id;
                         document.getElementById(id).classList.add('selected');
@@ -446,7 +443,6 @@
                     }
                 }
             } else if (piece && piece.player === currentPlayer) {
-                // 선택된 기물이 없고, 내 기물을 클릭했을 경우
                 selectedPiece = id;
                 document.getElementById(id).classList.add('selected');
                 getValidMoves(id).forEach(move => {
