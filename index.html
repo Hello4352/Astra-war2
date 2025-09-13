@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>아스트라 워즈</title>
+<style>
+  :root {
+    --cell:64px;
+    --light:#eeeed2;
+    --dark:#769656;
+  }
+  body { display:flex; flex-direction:column; align-items:center; font-family:sans-serif; }
+  h1 { margin:10px; }
+  #status { margin:10px; font-weight:bold; }
+  .board-wrap { display:inline-grid; grid-template-columns: auto repeat(10, var(--cell)) auto;
+                grid-template-rows: auto repeat(10, var(--cell)) auto; }
+  .coord { display:flex; align-items:center; justify-content:center; font-size:14px; }
+  .cell { width:var(--cell); height:var(--cell); display:flex; align-items:center; justify-content:center; position:relative; }
+  .light { background:var(--light); }
+  .dark { background:var(--dark); }
+  .piece { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+           font-weight:bold; box-shadow:inset 0 -3px rgba(0,0,0,.2); cursor:pointer; }
+  .p0 { background:#222; color:#fff; }
+  .p1 { background:#fff; color:#222; border:1px solid #555; }
+  .core { border:3px solid red; }
+  #log { margin-top:15px; max-height:200px; overflow:auto; width:90%; border:1px solid #ccc; padding:5px; background:#fafafa; font-size:14px; }
+</style>
+</head>
+<body>
+<h1>아스트라 워즈</h1>
+<div id="status">플레이어 1 차례</div>
+<div class="board-wrap" id="board"></div>
+<div id="log"></div>
+
+<script>
+const ROWS=10,COLS=10;
+const board=document.getElementById('board');
+const statusEl=document.getElementById('status');
+const logEl=document.getElementById('log');
+
+let turn=0; // 0=Player1, 1=Player2
+let selected=null;
+
+const pieces=[]; // {r,c,player,type,hp?}
+
+function log(msg){
+  let line=document.createElement('div');
+  line.textContent=msg;
+  logEl.appendChild(line);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+function buildBoard(){
+  // 상단 알파벳
+  board.appendChild(document.createElement('div'));
+  for(let c=0;c<COLS;c++){ let d=document.createElement('div'); d.className='coord'; d.textContent=String.fromCharCode(97+c); board.appendChild(d); }
+  board.appendChild(document.createElement('div'));
+  // 본체
+  for(let r=ROWS;r>=1;r--){
+    // 왼쪽 숫자
+    let left=document.createElement('div'); left.className='coord'; left.textContent=r; board.appendChild(left);
+    for(let c=1;c<=COLS;c++){
+      let cell=document.createElement('div');
+      cell.className='cell '+(((r+c)%2==0)?'light':'dark');
+      cell.dataset.r=r; cell.dataset.c=c;
+      cell.addEventListener('click',()=>onCellClick(r,c));
+      board.appendChild(cell);
+    }
+    // 오른쪽 숫자
+    let right=document.createElement('div'); right.className='coord'; right.textContent=r; board.appendChild(right);
+  }
+  // 하단 알파벳
+  board.appendChild(document.createElement('div'));
+  for(let c=0;c<COLS;c++){ let d=document.createElement('div'); d.className='coord'; d.textContent=String.fromCharCode(97+c); board.appendChild(d); }
+  board.appendChild(document.createElement('div'));
+}
+
+function getCell(r,c){
+  const idx=(ROWS-r)*(COLS+2+2)+1+c; // 보드-랩 구조상 보정
+  return board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+}
+
+function placePiece(r,c,player,type){
+  let p={r,c,player,type,hp:(type==='core'?3:1)};
+  pieces.push(p);
+  renderPiece(p);
+}
+function renderPiece(p){
+  let cell=getCell(p.r,p.c);
+  if(!cell) return;
+  let el=document.createElement('div');
+  el.className='piece '+(p.player===0?'p0':'p1')+(p.type==='core'?' core':'');
+  el.textContent=p.type[0].toUpperCase();
+  cell.appendChild(el);
+}
+
+function clearBoardRender(){
+  board.querySelectorAll('.cell').forEach(c=>c.innerHTML="");
+}
+
+function redraw(){
+  clearBoardRender();
+  pieces.forEach(p=>renderPiece(p));
+}
+
+function onCellClick(r,c){
+  let p=pieces.find(pp=>pp.r===r && pp.c===c);
+  if(selected){
+    if(p && p.player===turn){ // 같은 편 선택
+      selected=p;
+      return;
+    }
+    // 이동 시도
+    if(validMove(selected,r,c)){
+      log(`플레이어${turn+1} ${selected.type} (${selected.r},${selected.c}) → (${r},${c})`);
+      // 상대 기물 제거?
+      if(p){ 
+        if(p.type==='core'){ 
+          p.hp--; 
+          log(`코어 HP 감소 → ${p.hp}`);
+          if(p.hp<=0){ log(`플레이어${turn+1} 승리!`); }
+        } else {
+          pieces.splice(pieces.indexOf(p),1);
+        }
+      }
+      selected.r=r; selected.c=c;
+      redraw();
+      turn=1-turn;
+      statusEl.textContent=`플레이어 ${turn+1} 차례`;
+      selected=null;
+    } else {
+      selected=null;
+    }
+  } else {
+    if(p && p.player===turn){ selected=p; }
+  }
+}
+
+function validMove(p,r,c){
+  let dr=r-p.r, dc=c-p.c;
+  switch(p.type){
+    case 'drone': return (p.player===0?dr===1:dr===-1)&&Math.abs(dc)<=1;
+    case 'sentinel': return (Math.abs(dr)<=1 && Math.abs(dc)<=1);
+    case 'crusader': return (Math.abs(dr)===2&&Math.abs(dc)===1)||(Math.abs(dr)===1&&Math.abs(dc)===2);
+    case 'arbiter': return Math.abs(dr)===Math.abs(dc);
+    case 'overseer': return (dr===0||dc===0||Math.abs(dr)===Math.abs(dc));
+    case 'phantom': return Math.abs(dr)===Math.abs(dc);
+    case 'core': return false;
+  }
+  return false;
+}
+
+function setup(){
+  buildBoard();
+  // Player1 코어 (2,b)~(3,c)
+  placePiece(2,2,0,'core'); placePiece(2,3,0,'core');
+  placePiece(3,2,0,'core'); placePiece(3,3,0,'core');
+  // 방어선
+  placePiece(4,2,0,'sentinel'); placePiece(4,3,0,'sentinel');
+  placePiece(4,1,0,'crusader'); placePiece(4,4,0,'crusader');
+  placePiece(5,2,0,'drone'); placePiece(5,3,0,'drone');
+  placePiece(5,1,0,'drone'); placePiece(5,4,0,'drone');
+  placePiece(3,1,0,'arbiter'); placePiece(3,4,0,'arbiter');
+  placePiece(2,1,0,'overseer'); placePiece(2,4,0,'phantom');
+
+  // Player2 코어 (8,h)~(9,i)
+  placePiece(8,8,1,'core'); placePiece(8,9,1,'core');
+  placePiece(9,8,1,'core'); placePiece(9,9,1,'core');
+  // 방어선
+  placePiece(7,8,1,'sentinel'); placePiece(7,9,1,'sentinel');
+  placePiece(7,7,1,'crusader'); placePiece(7,10,1,'crusader');
+  placePiece(6,8,1,'drone'); placePiece(6,9,1,'drone');
+  placePiece(6,7,1,'drone'); placePiece(6,10,1,'drone');
+  placePiece(8,7,1,'arbiter'); placePiece(8,10,1,'arbiter');
+  placePiece(9,7,1,'phantom'); placePiece(9,10,1,'overseer');
+}
+setup();
+</script>
+</body>
+</html>
