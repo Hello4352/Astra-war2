@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Core Breaker</title>
     <style>
-        /* 기본 스타일 */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             display: flex;
@@ -18,7 +17,6 @@
             color: #ecf0f1;
         }
 
-        /* 메인 메뉴 화면 */
         #main-menu {
             text-align: center;
             padding: 40px;
@@ -55,7 +53,6 @@
             transform: translateY(-2px);
         }
 
-        /* 게임 컨테이너 */
         #game-container {
             display: none;
             flex-direction: column;
@@ -74,7 +71,6 @@
             text-align: center;
         }
 
-        /* 게임 보드 스타일 */
         #game-board {
             display: grid;
             grid-template-columns: 30px repeat(10, 50px);
@@ -88,6 +84,7 @@
             justify-content: center;
             align-items: center;
             font-weight: bold;
+            user-select: none;
         }
 
         .cell {
@@ -97,6 +94,8 @@
             box-sizing: border-box;
             font-size: 24px;
             position: relative;
+            overflow: hidden;
+            cursor: pointer;
         }
         
         .label {
@@ -104,17 +103,24 @@
             background-color: #f0f0f0;
         }
 
-        /* 코어, 기물 스타일 */
-        .core-p1 { background-color: rgba(70, 130, 180, 0.7); }
-        .core-p2 { background-color: rgba(220, 20, 60, 0.7); }
-        
+        .core-p1, .core-p2 {
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+        }
+        .core-p1 { background-color: rgba(70, 130, 180, 0.9); }
+        .core-p2 { background-color: rgba(220, 20, 60, 0.9); }
+
         .piece {
-            cursor: pointer;
-            transition: transform 0.2s;
+            width: 36px;
+            height: 36px;
+            display: block;
+            pointer-events: none;
+            transform-origin: center;
+            transition: transform 0.12s;
         }
-        .piece:hover {
-            transform: scale(1.1);
-        }
+
+        .cell:hover .piece { transform: scale(1.08); }
 
         .selected {
             outline: 3px solid #f1c40f;
@@ -123,7 +129,7 @@
         }
         
         .movable {
-            background-color: rgba(46, 204, 113, 0.4);
+            background-color: rgba(46, 204, 113, 0.6) !important;
         }
 
         .pushed::after {
@@ -133,8 +139,8 @@
             top: 0;
             right: 0;
             opacity: 0.8;
+            pointer-events: none;
         }
-
     </style>
 </head>
 <body>
@@ -158,47 +164,81 @@
     </div>
 
     <script>
-        // --- DOM 요소 ---
         const mainMenu = document.getElementById('main-menu');
         const gameContainer = document.getElementById('game-container');
         const startButton = document.getElementById('start-button');
         const boardElement = document.getElementById('game-board');
         const statusPanel = document.getElementById('status-panel');
 
-        // --- 게임 상태 변수 ---
         const BOARD_SIZE = 10;
-        const P1_CORE_LOCATIONS = ['b2', 'c2', 'b3', 'c3'];
-        const P2_CORE_LOCATIONS = ['h8', 'i8', 'h9', 'i9'];
+        const P1_CORE_LOCATIONS = ['e1', 'f1', 'e2', 'f2'];
+        const P2_CORE_LOCATIONS = ['e10', 'f10', 'e9', 'f9'];
         
         let coreHealth = { p1: 3, p2: 3 };
         let currentPlayer = 'p1';
-        let gamePieces = {}; // 보드 위 기물 정보 저장
-        let selectedPiece = null; // 선택된 기물의 id
+        let gamePieces = {};
+        let selectedPiece = null;
         let isGameOver = false;
 
-        // 기물 초기 배치 설정
+        // ★ 기물 배치 수정: 바깥에 약한 기물, 코어 주변 강한 기물
         const initialSetup = {
-            'a1': { type: 'Striker', player: 'p1', pushed: false }, 'b1': { type: 'Cannon', player: 'p1' }, 'c1': { type: 'Striker', player: 'p1', pushed: false }, 'd1': { type: 'Breaker', player: 'p1' },
-            'a2': { type: 'Striker', player: 'p1', pushed: false },                                                 'd2': { type: 'Striker', player: 'p1', pushed: false },
-            'a3': { type: 'Tracer', player: 'p1' },                                                  'd3': { type: 'Tracer', player: 'p1' },
-            'a4': { type: 'Striker', player: 'p1', pushed: false }, 'b4': { type: 'Striker', player: 'p1', pushed: false }, 'c4': { type: 'Striker', player: 'p1', pushed: false }, 'd4': { type: 'Striker', player: 'p1', pushed: false },
-            
-            'g7': { type: 'Striker', player: 'p2', pushed: false }, 'h7': { type: 'Striker', player: 'p2', pushed: false }, 'i7': { type: 'Striker', player: 'p2', pushed: false }, 'j7': { type: 'Striker', player: 'p2', pushed: false },
-            'g8': { type: 'Tracer', player: 'p2' },                                                  'j8': { type: 'Tracer', player: 'p2' },
-            'g9': { type: 'Striker', player: 'p2', pushed: false },                                                 'j9': { type: 'Striker', player: 'p2', pushed: false },
-            'g10': { type: 'Breaker', player: 'p2' }, 'h10': { type: 'Striker', player: 'p2', pushed: false }, 'i10': { type: 'Cannon', player: 'p2' }, 'j10': { type: 'Striker', player: 'p2', pushed: false },
+            // Player 1 (앞쪽 = 약한 기물)
+            'a1': { type: 'Striker', player: 'p1', pushed: false },
+            'b1': { type: 'Striker', player: 'p1', pushed: false },
+            'c1': { type: 'Tracer', player: 'p1' },
+            'd1': { type: 'Tracer', player: 'p1' },
+            'g1': { type: 'Tracer', player: 'p1' },
+            'h1': { type: 'Tracer', player: 'p1' },
+            'i1': { type: 'Striker', player: 'p1', pushed: false },
+            'j1': { type: 'Striker', player: 'p1', pushed: false },
+
+            'c2': { type: 'Cannon', player: 'p1' },
+            'd2': { type: 'Breaker', player: 'p1' },
+            'g2': { type: 'Breaker', player: 'p1' },
+            'h2': { type: 'Cannon', player: 'p1' },
+
+            // Player 2 (앞쪽 = 약한 기물)
+            'a10': { type: 'Striker', player: 'p2', pushed: false },
+            'b10': { type: 'Striker', player: 'p2', pushed: false },
+            'c10': { type: 'Tracer', player: 'p2' },
+            'd10': { type: 'Tracer', player: 'p2' },
+            'g10': { type: 'Tracer', player: 'p2' },
+            'h10': { type: 'Tracer', player: 'p2' },
+            'i10': { type: 'Striker', player: 'p2', pushed: false },
+            'j10': { type: 'Striker', player: 'p2', pushed: false },
+
+            'c9': { type: 'Cannon', player: 'p2' },
+            'd9': { type: 'Breaker', player: 'p2' },
+            'g9': { type: 'Breaker', player: 'p2' },
+            'h9': { type: 'Cannon', player: 'p2' }
         };
 
-        const pieceEmoji = {
-            'p1_Striker': ' S ', 'p1_Cannon': ' C ', 'p1_Tracer': ' T ', 'p1_Breaker': ' B ',
-            'p2_Striker': 's', 'p2_Cannon': 'c', 'p2_Tracer': 't', 'p2_Breaker': 'b'
-        };
+        function makePieceDataURI(player, type) {
+            const defs = {
+                p1: { color: '#2c9fd6', stroke: '#1b6f94' },
+                p2: { color: '#d64550', stroke: '#8b2a2f' }
+            };
+            const letters = {
+                'Striker': 'S',
+                'Cannon': 'C',
+                'Tracer': 'T',
+                'Breaker': 'B'
+            };
+            const { color, stroke } = defs[player];
+            const letter = letters[type] || '?';
+            const svg =
+`<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+  <g>
+    <circle cx="32" cy="32" r="26" fill="${color}" stroke="${stroke}" stroke-width="3"/>
+  </g>
+  <text x="32" y="38" font-family="Segoe UI, Roboto, Arial" font-size="30" font-weight="700" text-anchor="middle" fill="#ffffff">${letter}</text>
+</svg>`;
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+        }
 
-        // --- 함수 정의 ---
-        
         function createBoard() {
             boardElement.innerHTML = '';
-            const cols = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+            const cols = ['a','b','c','d','e','f','g','h','i','j'];
 
             for (let row = 0; row <= BOARD_SIZE; row++) {
                 for (let col = 0; col <= BOARD_SIZE; col++) {
@@ -228,26 +268,41 @@
         }
 
         function placeInitialPieces() {
-            P1_CORE_LOCATIONS.forEach(id => document.getElementById(id)?.classList.add('core-p1'));
-            P2_CORE_LOCATIONS.forEach(id => document.getElementById(id)?.classList.add('core-p2'));
-
+            P1_CORE_LOCATIONS.forEach(id => {
+                const cell = document.getElementById(id);
+                cell.classList.add('core-p1');
+                cell.textContent = "core";
+            });
+            P2_CORE_LOCATIONS.forEach(id => {
+                const cell = document.getElementById(id);
+                cell.classList.add('core-p2');
+                cell.textContent = "core";
+            });
             gamePieces = JSON.parse(JSON.stringify(initialSetup));
             drawPieces();
         }
         
         function drawPieces() {
             document.querySelectorAll('.cell').forEach(cell => {
-                cell.textContent = '';
+                if (!cell.classList.contains('core-p1') && !cell.classList.contains('core-p2')) {
+                    cell.textContent = '';
+                }
                 cell.classList.remove('pushed');
+                if (!cell.classList.contains('core-p1') && !cell.classList.contains('core-p2')) {
+                    cell.innerHTML = '';
+                }
             });
             
             for (const id in gamePieces) {
                 const piece = gamePieces[id];
                 const cell = document.getElementById(id);
                 if (cell) {
-                    const key = `${piece.player}_${piece.type}`;
-                    cell.textContent = pieceEmoji[key] || '';
-                    cell.style.color = piece.player === 'p1' ? 'steelblue' : 'crimson';
+                    const src = makePieceDataURI(piece.player, piece.type);
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.alt = piece.type;
+                    img.className = 'piece';
+                    cell.appendChild(img);
                     if (piece.type === 'Striker' && piece.pushed) {
                         cell.classList.add('pushed');
                     }
@@ -299,54 +354,50 @@
         function getValidMoves(pieceId) {
             const piece = gamePieces[pieceId];
             if (!piece) return [];
-
             const { col, row } = parseId(pieceId);
             const moves = [];
+            const dir = piece.player === 'p1' ? 1 : -1;
             
             switch (piece.type) {
                 case 'Striker':
-                    const dir = piece.player === 'p1' ? 1 : -1;
-                    [-1, 0, 1].forEach(dCol => {
-                         [dir].forEach(dRow => {
-                            const nextId = toId(col + dCol, row + dRow);
-                            if (nextId && !gamePieces[nextId]) moves.push(nextId);
-                        });
-                    });
-                     [-1, 0, 1].forEach(dCol => {
-                         [-1, 0, 1].forEach(dRow => {
-                            if (dCol === 0 && dRow === 0) return;
-                            const targetId = toId(col + dCol, row + dRow);
-                            if (targetId && gamePieces[targetId] && gamePieces[targetId].player !== piece.player) {
-                                moves.push(targetId);
-                            }
-                        });
-                    });
-                    break;
-                case 'Cannon':
-                    [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dCol, dRow]) => {
-                        for (let i = 1; i <= 2; i++) {
-                            const nextId = toId(col + dCol * i, row + dRow * i);
-                            if (nextId && !gamePieces[nextId]) moves.push(nextId);
-                            else break;
+                    [[-1, dir], [1, dir]].forEach(([dCol, dRow]) => {
+                        const nextId = toId(col + dCol, row + dRow);
+                        if (nextId && !gamePieces[nextId]) {
+                            moves.push(nextId);
                         }
                     });
-                     [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dCol, dRow]) => {
-                        for (let i = 1; i <= 4; i++) {
+                    [[0, dir], [-1, 0], [1, 0]].forEach(([dCol, dRow]) => {
+                        const targetId = toId(col + dCol, row + dRow);
+                        if (targetId && gamePieces[targetId] && gamePieces[targetId].player !== piece.player) {
+                            moves.push(targetId);
+                        }
+                    });
+                    break;
+
+                case 'Cannon':
+                    [[0,1], [0,-1], [1,0], [-1,0]].forEach(([dCol, dRow]) => {
+                        for (let i = 1; i <= 3; i++) {
                             const targetId = toId(col + dCol * i, row + dRow * i);
                             if (!targetId) break;
                             if (gamePieces[targetId]) {
-                                if (gamePieces[targetId].player !== piece.player) moves.push(targetId);
+                                if (gamePieces[targetId].player !== piece.player) {
+                                    moves.push(targetId);
+                                }
                                 break;
                             }
                         }
                     });
                     break;
+
                 case 'Tracer':
-                    [[2,2], [2,-2], [-2,2], [-2,-2]].forEach(([dCol, dRow]) => {
+                    [[1,1], [1,-1], [-1,1], [-1,-1], [2,2], [2,-2], [-2,2], [-2,-2]].forEach(([dCol, dRow]) => {
                         const nextId = toId(col + dCol, row + dRow);
-                        if (nextId && (!gamePieces[nextId] || gamePieces[nextId].player !== piece.player)) moves.push(nextId);
+                        if (nextId && (!gamePieces[nextId] || gamePieces[nextId].player !== piece.player)) {
+                           moves.push(nextId);
+                        }
                     });
                     break;
+
                 case 'Breaker':
                     for (let dCol = -1; dCol <= 1; dCol++) {
                         for (let dRow = -1; dRow <= 1; dRow++) {
@@ -366,8 +417,12 @@
             const piece = gamePieces[fromId];
             const target = gamePieces[toId];
 
-            // 액션 처리
-            if (target) { // 공격
+            if (piece.type === 'Cannon') {
+                delete gamePieces[toId];
+                return;
+            }
+
+            if (target) {
                 if (piece.type === 'Striker' && target.type === 'Striker') {
                     if (target.pushed) {
                         delete gamePieces[toId];
@@ -387,15 +442,12 @@
                      delete gamePieces[toId];
                 }
             
-            // ================= BUG FIX START =================
-            // 기존의 버그를 유발하던 코드를 삭제하고, 정상 작동하는 새 로직으로 교체합니다.
             } else if (piece.type === 'Breaker') {
                 const opponent = piece.player === 'p1' ? 'p2' : 'p1';
                 const opponentCore = opponent === 'p1' ? P1_CORE_LOCATIONS : P2_CORE_LOCATIONS;
                 const { col: toCol, row: toRow } = parseId(toId);
                 let isAdjacentToCore = false;
 
-                // 이동하려는 위치(toId)가 상대 코어에 인접한지 확인
                 for (const coreCellId of opponentCore) {
                     const { col: coreCol, row: coreRow } = parseId(coreCellId);
                     if (Math.abs(toCol - coreCol) <= 1 && Math.abs(toRow - coreRow) <= 1) {
@@ -404,16 +456,13 @@
                     }
                 }
                 
-                // 만약 인접하다면, 자폭하고 1의 데미지를 줍니다.
                 if (isAdjacentToCore) {
                     coreHealth[opponent]--;
-                    delete gamePieces[fromId]; // Breaker는 이동하지 않고 사라집니다.
-                    return; // 함수를 즉시 종료합니다.
+                    delete gamePieces[fromId];
+                    return; 
                 }
             }
-            // ================= BUG FIX END ===================
             
-            // 이동
             gamePieces[toId] = piece;
             delete gamePieces[fromId];
         }
@@ -454,13 +503,11 @@
         function startGame() {
             mainMenu.style.display = 'none';
             gameContainer.style.display = 'flex';
-            
             createBoard();
             placeInitialPieces();
             updateStatus();
         }
 
-        // --- 이벤트 리스너 ---
         startButton.addEventListener('click', startGame);
 
     </script>
